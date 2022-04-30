@@ -59,7 +59,7 @@ const (
 	redisKeyCredentialsExpiry       = "expiry"
 )
 
-func New(
+func NewOauth2Client(
 	redisClient *goredislib.Client,
 	// By default, we lock and store data for this client by oauth2 clientid
 	// If that's insufficient, use this string, which will be applied as a suffix
