@@ -35,6 +35,10 @@ func (de *DEntry) Valid() bool {
 	return de != nil && de.expiration.After(time.Now())
 }
 
+func (de *DEntry) IsValidAfter(t time.Time) bool {
+	return de != nil && de.expiration.After(t)
+}
+
 var (
 	dEntryLocalCache     = map[string]*DEntry{}
 	dEntryLocalCacheLock sync.Mutex
