@@ -1,14 +1,19 @@
 package cache
 
-import "go.uber.org/zap"
+import (
+	"os"
+
+	"go.uber.org/zap"
+)
 
 var (
-	Logger *zap.Logger
+	Logger    *zap.Logger
+	nopLogger = zap.NewNop()
 )
 
 func logger() *zap.Logger {
-	if Logger == nil {
-		Logger = zap.NewNop()
+	if Logger == nil || os.Getenv("AIVA_CACHE_DEBUG") == "" {
+		Logger = nopLogger
 	}
 	return Logger
 }

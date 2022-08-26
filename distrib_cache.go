@@ -17,7 +17,7 @@ import (
 //
 // Uses evictable storage.
 //
-// TODO: Add an atomic LoadOrSave func
+//
 
 const (
 	dcacheRedisField_Expiration = "expiration"
@@ -53,13 +53,25 @@ func truncKey(keyIn string) string {
 	return truncate.Truncate(keyIn, 30, "...", truncate.PositionMiddle)
 }
 
-func DLoad(ctx context.Context, keyIn string) (*DEntry, error) {
-	// Check local
+//
+//
+// Loading
+
+func dLoadCheckLocal(ctx context.Context, keyIn string) *DEntry {
 	dEntryLocalCacheLock.Lock()
 	localDe, ok := dEntryLocalCache[keyIn]
 	dEntryLocalCacheLock.Unlock()
 	if ok && localDe.Valid() {
-		logger().Debug(fmt.Sprintf("[dcache:%s] DLoad: local cache hit (exp: %v)", truncKey(keyIn), time.Until(localDe.expiration)))
+		logger().Debug(fmt.Sprintf("[dcache:%s] dLoadCheckLocal: local cache hit (exp: %v)", truncKey(keyIn), time.Until(localDe.expiration)))
+		return localDe
+	}
+	return nil
+}
+
+// Load data from cache (local, then distributed), controlling access via distributed lock
+func DLoad(ctx context.Context, keyIn string) (*DEntry, error) {
+	// Check process-local cache first
+	if localDe := dLoadCheckLocal(ctx, keyIn); localDe != nil {
 		return localDe, nil
 	}
 
@@ -101,6 +113,43 @@ func DLoad(ctx context.Context, keyIn string) (*DEntry, error) {
 	return newEntry, nil
 }
 
+// Load data from cache (local, then distributed) without using a distributed lock
+func DLoadLockless(ctx context.Context, keyIn string) (*DEntry, error) {
+	// Check process-local cache first
+	if localDe := dLoadCheckLocal(ctx, keyIn); localDe != nil {
+		return localDe, nil
+	}
+
+	bodyString, expiration, err := dLoadData(ctx, keyIn)
+	if err != nil {
+		logger().Error(fmt.Sprintf("[dcache:%s] DLoadLockless failed: dLoadData failed", truncKey(keyIn)), zap.Error(err))
+		return nil, err
+	}
+
+	// Short-circuit if expired
+	if expiration.Before(time.Now()) {
+		logger().Debug(fmt.Sprintf("[dcache:%s] DLoadLockless: data found in shared storage, but it's expired", truncKey(keyIn)))
+		return nil, nil
+	}
+
+	// Cache the loaded record locally for quicker future lookups
+	newEntry := &DEntry{
+		expiration: expiration,
+		RawBody:    []byte(bodyString),
+	}
+	dEntryLocalCacheLock.Lock()
+	dEntryLocalCache[keyIn] = newEntry
+	dEntryLocalCacheLock.Unlock()
+
+	logger().Debug(fmt.Sprintf("[dcache:%s] DLoadLockless: data loaded from shared storage, saved to local cache (exp: %v)", truncKey(keyIn), time.Until(newEntry.expiration)))
+
+	return newEntry, nil
+}
+
+//
+//
+// Saving
+
 func DSave(ctx context.Context, keyIn string, body []byte, expiration time.Time) error {
 	dlock := DLock(redisEntryKey(keyIn))
 	if err := dlock.LockContext(ctx); err != nil {
@@ -129,6 +178,27 @@ func DSave(ctx context.Context, keyIn string, body []byte, expiration time.Time)
 	dEntryLocalCacheLock.Unlock()
 
 	logger().Debug(fmt.Sprintf("[dcache:%s] DSave finished", truncKey(keyIn)))
+
+	return nil
+}
+
+func DSaveLockless(ctx context.Context, keyIn string, body []byte, expiration time.Time) error {
+	err := dPersistData(ctx, keyIn, body, expiration)
+	if err != nil {
+		logger().Error(fmt.Sprintf("[dcache:%s] DSaveLockless failed", truncKey(keyIn)), zap.Error(err))
+		return err
+	}
+
+	// Cache the loaded record locally for quicker future lookups
+	newEntry := &DEntry{
+		expiration: expiration,
+		RawBody:    body,
+	}
+	dEntryLocalCacheLock.Lock()
+	dEntryLocalCache[keyIn] = newEntry
+	dEntryLocalCacheLock.Unlock()
+
+	logger().Debug(fmt.Sprintf("[dcache:%s] DSaveLockless finished", truncKey(keyIn)))
 
 	return nil
 }
