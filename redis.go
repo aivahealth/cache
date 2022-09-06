@@ -68,21 +68,27 @@ func RedisClientNoevictReadonly() *redis.Client {
 }
 
 func RedisAddressEvict() string {
-	return os.Getenv("REDIS_DEDUP_ADDRESS")
+	maybeAddress := os.Getenv("REDIS_EVICT_ADDRESS")
+	if maybeAddress == "" {
+		// legacy fallback
+		maybeAddress = os.Getenv("REDIS_DEDUP_ADDRESS")
+	}
+	return maybeAddress
 }
 
 func RedisAddressNoevict() string {
-	maybeAddress := os.Getenv("REDIS_NO_EVICT_ADDRESS")
+	maybeAddress := os.Getenv("REDIS_NOEVICT_ADDRESS")
 	if maybeAddress == "" {
-		maybeAddress = os.Getenv("REDIS_NOEVICT_ADDRESS")
+		// legacy fallback
+		maybeAddress = os.Getenv("REDIS_NO_EVICT_ADDRESS")
 	}
 	return maybeAddress
 }
 
 func RedisAddressEvictReadonly() string {
-	return os.Getenv("REDIS_DEDUP_ADDRESS_READONLY")
+	return os.Getenv("REDIS_EVICT_READONLY_ADDRESS")
 }
 
 func RedisAddressNoevictReadonly() string {
-	return os.Getenv("REDIS_NOEVICT_ADDRESS_READONLY")
+	return os.Getenv("REDIS_NOEVICT_READONLY_ADDRESS")
 }
