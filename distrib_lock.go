@@ -28,7 +28,9 @@ func DLock(key string) *redsync.Mutex {
 		return maybe
 	}
 	actualKey := fmt.Sprintf("dlock:%s", key)
-	mut := redsyncInternal.NewMutex(actualKey)
+	mut := redsyncInternal.NewMutex(actualKey,
+		redsync.WithTries(512),
+	)
 	mutexes[key] = mut
 	return mut
 }
