@@ -34,3 +34,23 @@ func DLock(key string) *redsync.Mutex {
 	mutexes[key] = mut
 	return mut
 }
+
+func DLockWithOptions(key string, options... redsync.Option) *redsync.Mutex {
+	mutexesLock.Lock()
+	defer mutexesLock.Unlock()
+
+	if mutexes == nil {
+		mutexes = map[string]*redsync.Mutex{}
+		pool := goredis.NewPool(RedisClientEvict())
+		redsyncInternal = redsync.New(pool)
+	}
+	if maybe, ok := mutexes[key]; ok {
+		return maybe
+	}
+	actualKey := fmt.Sprintf("dlock:%s", key)
+	mut := redsyncInternal.NewMutex(actualKey,
+		options...,
+	)
+	mutexes[key] = mut
+	return mut
+}
